@@ -173,7 +173,7 @@ export const MIME_TYPE_FORMATS = {
 const GLB_HEADER_MAGIC = "glTF";
 const GLB_HEADER_LENGTH = 12;
 const GLB_CHUNK_TYPES = { JSON: 0x4e4f534a, BIN: 0x004e4942 };
-
+const MOZ_HUBS_TEXTURE_BASIS = "MOZ_HUBS_texture_basis";
 /*********************************/
 /********** INTERPOLATION ********/
 /*********************************/
@@ -256,6 +256,8 @@ const defaultOptions = {
 class GLTFLoader {
   constructor(url, manager, options) {
     this.url = url;
+
+    this.basisTextureLoader = null;
     this.manager = manager !== undefined ? manager : DefaultLoadingManager;
     this.options = Object.assign({}, defaultOptions, options);
 
@@ -283,6 +285,14 @@ class GLTFLoader {
     this.textureLoader = new TextureLoader(this.manager);
     this.textureLoader.setCrossOrigin(this.options.crossOrigin);
 
+    // This is my interpretation of lines 60-66 here:
+    // https://github.com/MozillaReality/three.js/pull/42/files
+
+    this.basisTextureLoader = loader => {
+      this.basisTextureLoader = loader;
+      return this;
+    };
+
     this.fileLoader = new FileLoader(this.manager);
     this.fileLoader.setResponseType("arraybuffer");
 
@@ -300,6 +310,21 @@ class GLTFLoader {
 
     this.registerExtension(MaterialsUnlitLoaderExtension);
     this.registerExtension(LightmapLoaderExtension);
+  }
+
+  /**
+   * Placeholder basis texture loader
+   */
+  GLTFHubsBasisTexture(loader) {
+    if (!loader) {
+      throw new Error("THREE.GLTFLoader: No HubsBasisTextureLoader instance provided.");
+    }
+
+    // Hubs three.js uses the following line:
+    // this.name = EXTENSIONS.MOZ_HUBS_TEXTURE_BASIS
+    // but I don't have that EXTENSIONS const so just hardcoding in a string
+    this.name = MOZ_HUBS_TEXTURE_BASIS;
+    this.basisTextureLoader = loader;
   }
 
   registerExtension(Extension, options = {}) {
@@ -450,6 +475,19 @@ class GLTFLoader {
       this.stats.jsonSize = content.length;
 
       this.markDefs(json);
+
+      // My attempt to replicate:
+      // https://github.com/MozillaReality/three.js/blob/c2022580bb5f8f9cf2dd752c27d6ca41ef7e35ff/examples/js/loaders/GLTFLoader.js#L199
+      if (json.extensionsUsed) {
+        for (let i = 0; i < json.extensionsUsed.length; ++i) {
+          const extensionName = json.extensionsUsed[i];
+          // const extensionsRequired = json.extensionsRequired || [];
+
+          if (extensionName == "MOZ_HUBS_TEXTURE_BASIS") {
+            this.extensions[extensionName] = this.GLTFHubsBasisTexture(this.basisTextureLoader);
+          }
+        }
+      }
 
       for (const extension of this.extensions) {
         extension.onLoad();
@@ -1632,19 +1670,33 @@ class GLTFLoader {
   async loadTexture(textureIndex) {
     const { json } = await this.getDependency("root");
     const options = this.options;
-    const textureLoader = this.textureLoader;
+
+    console.log("json", json);
+    console.log("json.extensionsUsed", json.extensionsUsed);
+    console.log("json.images", json.images);
+    console.log("json.textures", json.textures);
 
     const URL = window.URL || window.webkitURL;
 
     const textureDef = json.textures[textureIndex];
+    const textureLoader = this.textureLoader;
+    let source;
 
-    const source = json.images[textureDef.source];
+    if (json.extensionsUsed !== undefined && json.extensionsUsed.includes(MOZ_HUBS_TEXTURE_BASIS)) {
+      if (textureDef.extensions !== undefined) {
+        if (Object.keys(textureDef.extensions).includes(MOZ_HUBS_TEXTURE_BASIS)) {
+          source = json.images[textureDef.extensions[MOZ_HUBS_TEXTURE_BASIS].source];
+        }
+      }
+    } else {
+      source = json.images[textureDef.source];
+    }
 
-    let sourceURI = source.uri;
-    let isObjectURL = false;
+    console.log("source", source);
 
+    let sourceURI;
+    let isObjectURL;
     let imageSize;
-
     if (source.bufferView !== undefined) {
       // Load binary image data from bufferView, if provided.
       const bufferView = await this.getDependency("bufferView", source.bufferView);
@@ -1652,18 +1704,23 @@ class GLTFLoader {
       const blob = new Blob([bufferView], { type: source.mimeType });
       sourceURI = URL.createObjectURL(blob);
       imageSize = blob.size;
+    } else {
+      sourceURI = source.uri;
+      isObjectURL = false;
     }
 
-    // Load Texture resource.
     let loader = Loader.Handlers.get(sourceURI);
-
     if (!loader) {
-      loader = textureLoader;
+      // This step doesn't work. Not sure how to properly form and load the BasisTextureLoader script
+      loader =
+        textureDef.extensions !== undefined && textureDef.extensions[MOZ_HUBS_TEXTURE_BASIS] !== undefined
+          ? this.basisTextureLoader
+          : textureLoader;
     }
 
     const textureUrl = this.resolveURL(sourceURI, options.path);
-
-    const texture = await loadTexture(textureUrl, this.textureLoader);
+    console.log("Do we make it this far? pt 3", loader);
+    const texture = await loadTexture(textureUrl, loader);
 
     if (!imageSize) {
       const perfEntries = performance.getEntriesByName(textureUrl);
