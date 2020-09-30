@@ -36,6 +36,9 @@ export async function compareTextures(hashCache, a, b) {
       a.wrapT === b.wrapT &&
       a.magFilter === b.magFilter &&
       a.minFilter === b.minFilter &&
+      a.offset.equals(b.offset) &&
+      a.rotation == b.rotation &&
+      a.repeat.equals(b.repeat) &&
       (await compareImages(hashCache, a.image, b.image))
     );
   }
@@ -59,7 +62,9 @@ async function meshBasicMaterialComparator(group, a, b) {
     a.side === b.side &&
     a.transparent === b.transparent &&
     a.color.equals(b.color) &&
-    (await compareTextures(imageHashes, a.map, b.map))
+    a.lightMapIntensity === b.lightMapIntensity &&
+    (await compareTextures(imageHashes, a.map, b.map)) &&
+    (await compareTextures(imageHashes, a.lightMap, b.lightMap))
   );
 }
 
@@ -88,11 +93,13 @@ async function dedupeTexture(imageHashes, textureCache, texture) {
 
   const cachedTexture = textureCache.get(imageHash);
 
-  if (cachedTexture) {
-    return cachedTexture;
+  if (await compareTextures(imageHashes, texture, cachedTexture)) {
+    if (cachedTexture) {
+      return cachedTexture;
+    } else {
+      textureCache.set(imageHash, texture);
+    }
   }
-
-  textureCache.set(imageHash, texture);
 
   return texture;
 }
@@ -120,6 +127,7 @@ export default class MeshCombinationGroup {
       material.aoMap = await dedupeTexture(imageHashes, textureCache, material.aoMap);
       material.normalMap = await dedupeTexture(imageHashes, textureCache, material.normalMap);
       material.emissiveMap = await dedupeTexture(imageHashes, textureCache, material.emissiveMap);
+      material.lightMap = await dedupeTexture(imageHashes, textureCache, material.lightMap);
     }
 
     await asyncTraverse(rootObject, async object => {

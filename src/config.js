@@ -46,6 +46,11 @@ import SimpleWaterNode from "./editor/nodes/SimpleWaterNode";
 import SimpleWaterNodeEditor from "./ui/properties/SimpleWaterNodeEditor";
 import AudioNode from "./editor/nodes/AudioNode";
 import AudioNodeEditor from "./ui/properties/AudioNodeEditor";
+import ScenePreviewCameraNode from "./editor/nodes/ScenePreviewCameraNode";
+import ScenePreviewCameraNodeEditor from "./ui/properties/ScenePreviewCameraNodeEditor";
+
+import MediaFrameNode from "./editor/nodes/MediaFrameNode";
+import MediaFrameNodeEditor from "./ui/properties/MediaFrameNodeEditor";
 
 import SketchfabSource from "./ui/assets/sources/SketchfabSource";
 import PolySource from "./ui/assets/sources/PolySource";
@@ -84,6 +89,8 @@ export function createEditor(api, settings) {
   editor.registerNode(ParticleEmitterNode, ParticleEmitterNodeEditor);
   editor.registerNode(KitPieceNode, KitPieceNodeEditor);
   editor.registerNode(SimpleWaterNode, SimpleWaterNodeEditor);
+  editor.registerNode(ScenePreviewCameraNode, ScenePreviewCameraNodeEditor);
+  editor.registerNode(MediaFrameNode, MediaFrameNodeEditor);
 
   editor.registerSource(new ElementsSource(editor));
   editor.registerSource(new MyAssetsSource(editor));
